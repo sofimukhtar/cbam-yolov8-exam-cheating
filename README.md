@@ -3,29 +3,7 @@
 Source code for the manuscript *"An Expert System for Fine-Grained Cheating Behavior
 Recognition in Offline Examinations using CBAM-Enhanced YOLO Architecture"*.
 
-The code implements the full pipeline described in the paper:
 
-| Manuscript component | Module |
-|---|---|
-| Frame extraction at 1 fps, session-level split (1–6 / 7–8 / 9–10), VOC/YOLO conversion | `examcheat/data.py` |
-| Annotation statistics, class-frequency weights `w_c = N_total / (C·N_c)` (Eq. 1), 25×25 heatmap | `examcheat/data.py` |
-| Targeted augmentation of Cheat_note, Using_cheat_sheets, Signalling (flip, ±25 % brightness, ±10° rotation) | `examcheat/data.py` |
-| Fleiss' κ and mean box IoU of three annotators, stratified 10 % sample | `examcheat/data.py` |
-| CBAM after the final C2f block at P3, P4, P5 (r = 8, 7×7 kernel) (Eqs. 2–5) | `examcheat/models.py` |
-| Class-weighted Varifocal Loss + CIoU + DFL, unchanged TAL (Eqs. 6, 21–24) | `examcheat/models.py` |
-| Mosaic oversampling with tile probability ∝ 1/N_c | `examcheat/train.py` |
-| Two separate detectors (status: 3 classes, behavior: 9 classes) | `examcheat/train.py` |
-| Ablation C–F and N0–N6; α / β sweeps | `examcheat/train.py` |
-| mAP@50, mAP@50–95, P, R, F1, macro/weighted F1, PDR, accuracy, FAR (Eqs. 10–19) | `examcheat/evaluate.py` |
-| Bootstrap CIs (B = 1,000), paired t-tests over five seeds, paired bootstrap tests | `examcheat/evaluate.py` |
-| Parameters, GFLOPs, FP16 size, CBAM latency | `examcheat/evaluate.py` |
-| CD-1, CD-2, five-fold ExamCeV2 reference, two-class restriction | `examcheat/crossdata.py` |
-| Per-view ByteTrack, track-to-seat mapping, association margin δ, multi-view max fusion (Eq. 12) | `examcheat/engine.py` |
-| Running score S_i(t), final score S_i(T), S_i^obs, alert levels (Eqs. 7–9, Algorithm 1) | `examcheat/engine.py` |
-| Threshold grid search on validation (macro-F1, FA/h ≤ 0.05) | `examcheat/system.py` |
-| Student-level, event-level, latency, IDF1, IDSW, IAA, oracle identities, association variants | `examcheat/system.py` |
-| Sensitivity: sampling rate, persistence, severity weights, observation duration, normalisation | `examcheat/system.py` |
-| Real-time operation and invigilator dashboard (Flask) | `examcheat/live.py`, `examcheat/dashboard.py` |
 
 Every parameter in the paper is in `configs/default.yaml`; any value can be overridden on
 the command line with `--set key=value`.
@@ -79,7 +57,7 @@ datasets by class name.
 
 ## Running the experiments
 
-`scripts/run_all.sh` runs every experiment in the paper's order. The individual steps are:
+
 
 ```bash
 python -m examcheat extract-frames            # also --fps 2 and --fps 5 for the sensitivity study
@@ -111,36 +89,7 @@ python -m examcheat dashboard
 All outputs are written to `runs/results/` as JSON (metrics, CIs, tests, tables) and as
 PNG/PDF figures (confusion matrices, heatmap).
 
-## Implementation notes
 
-* **Scores.** `S_i(t) = E_i(t)/t` is the running score that drives online alerts;
-  `S_i = S_i(T) = E_i(T)/T` is the final score that sets the session alert. Both use the same
-  thresholds and coincide at `t = T`. Because `E_i(t)` is non-decreasing and `t` grows, the
-  running alert returns to Green at the first `t > E_i(t0)/θ_low` after evidence stops.
-  `compute_scores` (offline, vectorised) and `OnlineEngine` (live) implement identical rules.
-* **Accuracy and FAR** need true negatives, which object detection does not define. They are
-  computed from image-level presence decisions: for each (image, class) pair, the class is
-  positive in the ground truth if annotated and positive in the prediction if detected at
-  conf ≥ 0.25. The binary cheating decision for the status task uses the Student_cheating class.
-* **mAP averaging.** Classes without ground truth in the evaluated set are excluded from the
-  averages, as in COCO and Ultralytics. Matching is greedy in descending confidence, as stated
-  in the paper. This can differ by a few tenths of a point from Ultralytics' validator, which
-  matches by IoU order.
-* **ByteTrack buffer.** Ultralytics computes `max_time_lost = frame_rate/30 · track_buffer`;
-  the tracker is created with `frame_rate = 30` and `track_buffer = 15·fps`, giving exactly
-  τ_lost = 15 s at any sampling rate.
-* **Behavior-detection attribution.** The seat-matching cost is `1 − IoA(detection, R_j)`,
-  where `R_j` is the union of student j's tracked box and seat region (so that objects on the
-  desk are attributed to its owner). The margin used for the δ rule is the smaller of the
-  detection margin and the track's seat margin.
-* **Parameter counts.** The CBAM blocks add exactly 9,314 / 36,962 / 83,042 parameters
-  (129,318 in total). The vanilla YOLOv8m count depends on the number of classes
-  (25,858,057 for three classes; 25,902,640 for the 80-class COCO head).
-* **Ablation A and B** (generic anchor-based detector, then + C2f/SPPF) cannot be expressed in
-  the anchor-free Ultralytics code base. Train them with an anchor-based implementation
-  (e.g. the original YOLOv5 repository) on the same split and hyperparameters.
-* **Determinism.** Seeds 0–4 set Python, NumPy and PyTorch seeds and Ultralytics'
-  `deterministic=True`. Results still vary slightly across GPUs and library versions.
 
 ## Ethics
 
