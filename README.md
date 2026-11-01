@@ -1,12 +1,6 @@
 # Fine-Grained Cheating Behavior Recognition in Offline Examinations
 
-Source code for the manuscript *"An Expert System for Fine-Grained Cheating Behavior
-Recognition in Offline Examinations using CBAM-Enhanced YOLO Architecture"*.
 
-
-
-Every parameter in the paper is in `configs/default.yaml`; any value can be overridden on
-the command line with `--set key=value`.
 
 ## Installation
 
