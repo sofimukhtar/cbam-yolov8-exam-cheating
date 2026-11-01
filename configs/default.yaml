@@ -1,0 +1,153 @@
+# =====================================================================
+#  Default configuration: every parameter stated in the manuscript.
+#  Paths are relative to the project root unless absolute.
+# =====================================================================
+
+paths:
+  raw_videos: data/raw_videos          # data/raw_videos/session_XX/view_Y.mp4
+  frames: data/frames                  # data/frames/session_XX/view_Y/000001.jpg
+  annotations: data/annotations        # LabelImg output (YOLO .txt or VOC .xml), mirrors frames/
+  datasets: data/datasets              # built YOLO datasets (status/, behavior/)
+  examcev2: data/examcev2              # ExamCeV2 in YOLO format: images/, labels/
+  runs: runs                           # all training / evaluation outputs
+  seat_maps: configs/seat_maps         # per-session, per-view seat maps (JSON)
+  system_gt: data/system_gt            # student-level / event / identity ground truth
+
+# ---------------------------------------------------------------------
+# Data collection and splitting (session-level, participant-disjoint)
+# ---------------------------------------------------------------------
+data:
+  video_fps: 25                # CCTV recording rate
+  sample_fps: 1                # frames used for training and inference
+  session_minutes: 45          # T = 2700 steps per session at 1 fps
+  views: 4                     # V synchronized CCTV views
+  split:
+    train: [1, 2, 3, 4, 5, 6]  # Classroom 1 and 2
+    val: [7, 8]                # Classroom 3
+    test: [9, 10]              # Classroom 3
+  image_ext: .jpg
+
+# Class lists. ORDER DEFINES THE YOLO CLASS INDEX.
+classes:
+  status: [Student_cheating, Student_not_cheating, Person]
+  status_candidate: [Student_cheating, Student_not_cheating]   # two-class (cross-dataset)
+  behavior: [Normal, Mobile, Electronic_item, Using_Mobile, Using_cheat_sheets,
+             Sharing, Peeping, Signalling, Cheat_note]
+  minority: [Cheat_note, Using_cheat_sheets, Signalling]       # targeted augmentation
+
+# ---------------------------------------------------------------------
+# Class-imbalance mitigation
+# ---------------------------------------------------------------------
+imbalance:
+  class_weighting:             # w_c = N_total / (C * N_c), from training annotations
+    status: false              # w_c = 1.0 for the binary/status task
+    behavior: true
+  mosaic_oversampling: true    # mosaic tiles sampled with probability ~ 1/N_c
+  targeted_augmentation:
+    enabled: true
+    hflip: true
+    brightness: 0.25           # +/- 25 %
+    rotation_deg: 10           # +/- 10 degrees
+    copies_per_image: 3
+
+# ---------------------------------------------------------------------
+# Model
+# ---------------------------------------------------------------------
+model:
+  cfg: yolov8m.yaml
+  weights: yolov8m.pt          # MS-COCO pretrained
+  imgsz: 640
+  cbam:
+    enabled: true
+    layers: [4, 6, 8]          # final C2f block at P3, P4, P5 (192, 384, 576 channels)
+    reduction: 8               # r
+    spatial_kernel: 7
+
+# ---------------------------------------------------------------------
+# Training objective and optimisation
+# ---------------------------------------------------------------------
+loss:
+  cls_type: vfl                # vfl | bce
+  cls_gain: 1.0                # lambda_cls (YOLOv8m default 0.5 with BCE)
+  box_gain: 7.5                # alpha (CIoU)
+  dfl_gain: 1.5                # beta  (DFL)
+  vfl_alpha: 0.75              # gamma_vfl in the manuscript
+  vfl_gamma: 2.0               # gamma (focusing)
+  tal_topk: 10
+  tal_alpha: 0.5               # kappa_1
+  tal_beta: 6.0                # kappa_2
+
+train:
+  epochs: 30
+  batch: 16
+  lr0: 0.001
+  optimizer: AdamW
+  momentum: 0.937              # beta_1
+  weight_decay: 0.0005
+  amp: true
+  workers: 8
+  device: 0
+  seeds: [0, 1, 2, 3, 4]       # repeated runs
+
+# ---------------------------------------------------------------------
+# Evaluation protocol
+# ---------------------------------------------------------------------
+eval:
+  conf: 0.25                   # confidence threshold for P/R/F1/PDR/accuracy
+  map_conf: 0.001              # confidence threshold for mAP (COCO protocol)
+  nms_iou: 0.70
+  match_iou: 0.50
+  bootstrap: 1000
+  cv_folds: 5                  # ExamCeV2 in-domain reference
+
+# ---------------------------------------------------------------------
+# Expert-system rule engine
+# ---------------------------------------------------------------------
+engine:
+  severity_weights:
+    Normal: 0.0
+    Mobile: 0.3
+    Electronic_item: 0.5
+    Using_Mobile: 0.8
+    Using_cheat_sheets: 0.8
+    Sharing: 1.0
+    Peeping: 0.7
+    Signalling: 0.7
+    Cheat_note: 0.5
+  persistence_tau: 3           # consecutive sampled frames for phi = 1.5 (scaled with fps)
+  persistence_factor: 1.5
+  track_conf: 0.25             # tau_conf
+  lost_track_seconds: 15       # tau_lost = 15 frames at 1 fps
+  ambiguity_margin: 0.10       # delta
+  sharing_exempt: true
+  theta_low: 0.15
+  theta_mid: 0.40
+  theta_low_obs: 0.16
+  theta_mid_obs: 0.42
+  threshold_search:
+    low_range: [0.05, 0.30]
+    mid_range: [0.30, 0.60]
+    step: 0.01
+    max_fa_per_student_hour: 0.05
+
+# ByteTrack (per view)
+tracker:
+  track_high_thresh: 0.25
+  track_low_thresh: 0.10
+  new_track_thresh: 0.25
+  match_thresh: 0.80
+  fuse_score: true
+
+# ---------------------------------------------------------------------
+# System-level evaluation
+# ---------------------------------------------------------------------
+system_eval:
+  event_tolerance_s: 5
+  fa_merge_gap_s: 5
+  occlusion_visibility: 0.5
+  overlap_iou: 0.30
+  perturbation_draws: 100
+  perturbation_range: [0.8, 1.2]
+  observation_fractions: [0.25, 0.50, 0.75, 1.0]
+  sampling_rates: [1, 2, 5]
+  persistence_taus: [2, 3, 4, 5]
